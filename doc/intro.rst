@@ -98,6 +98,33 @@ PRank
 - Penalties: L2
 - Learning rate: No
 
+Multi-label with partially observed labels
+------------------------------------------
+
+:class:`classification.MultiLabelClassifier`
+
+- One binary linear classifier per class, wrapped around any lightning
+  binary estimator (``base_estimator``)
+- Training population of class ``k`` is defined by the sample x class
+  observation mask: unaudited cells are never encoded as negatives
+- The class vocabulary is frozen at fit time; prediction always returns the
+  full class axis and every class slot follows the same field contract
+- Evaluation only counts audited cells, so rows with some unknown labels are
+  kept rather than dropped
+
+.. code-block:: python
+
+    from lightning.classification import MultiLabelClassifier
+    from lightning.classification import LinearSVC
+
+    clf = MultiLabelClassifier(
+        base_estimator=LinearSVC(),
+        classes=["sports", "politics", "tech"],
+    )
+    clf.fit(X, y, sample_mask=M)   # M[i, k] True iff y[i, k] was audited
+    clf.predict_proba(X)           # (n_samples, 3), full class axis
+    clf.score(X, y, sample_mask=M) # audited cells only
+
 
 .. toctree::
     :hidden:
