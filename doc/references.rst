@@ -73,3 +73,10 @@ This module contains algorithms for solving ranking and ordinal regression probl
 
     ranking.PRank
     ranking.KernelPRank
+    ranking.PairwiseRanker
+
+.. autosummary::
+   :toctree: generated/
+
+    ranking.PairwiseRankingClassifier
+    ranking.query_train_test_split

@@ -98,6 +98,22 @@ PRank
 - Penalties: L2
 - Learning rate: No
 
+PairwiseRanker
+--------------
+
+:class:`ranking.PairwiseRanker`
+
+- Main idea: learn-to-rank from within-query pairs.  Documents of the same
+  query with different relevance grades are turned into directed feature
+  differences, and a regular linear classifier is trained on them.  Labels
+  are never compared across queries and same-grade documents are not paired.
+  The learned coefficients score the original documents, and
+  :meth:`ranking.PairwiseRanker.rank` sorts each query stably.
+- Penalties: L1, L2, L1/L2 (via the underlying SGD solver)
+- Learning rate: Yes (via the underlying SGD solver)
+- Use :func:`ranking.query_train_test_split` to split train/validation sets
+  without ever putting the same query on both sides.
+
 
 .. toctree::
     :hidden:
