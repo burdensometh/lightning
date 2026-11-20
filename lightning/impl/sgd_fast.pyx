@@ -327,16 +327,18 @@ def _binary_sgd(self,
                 random_state,
                 callback,
                 int n_calls,
-                int verbose):
+                int verbose,
+                LONG t_start=0,
+                double w_scale_init=1.0):
 
     cdef Py_ssize_t n_samples = X.get_n_samples()
     cdef Py_ssize_t n_features = X.get_n_features()
 
     # Initialization
     cdef int i, ii
-    cdef LONG t
+    cdef LONG t, t_eta
     cdef double update, update_eta, update_eta_scaled, pred, eta, scale
-    cdef double w_scale = 1.0
+    cdef double w_scale = w_scale_init
     cdef double intercept = 0.0
     cdef int has_callback = callback is not None
     cdef int nn_l1 = penalty == -1
@@ -356,13 +358,17 @@ def _binary_sgd(self,
     cdef np.ndarray[int, ndim=1, mode='c'] index
     index = np.arange(n_samples, dtype=np.int32)
 
+    # t is local to this call (regularization buffers are flushed at the
+    # end); t_eta is the absolute number of updates performed across all
+    # calls and drives the learning-rate schedule.
     for t in xrange(1, max_iter + 1):
+        t_eta = t_start + t
         # Retrieve current training instance and shuffle if necessary.
-        ii = (t-1) % n_samples
+        ii = (t - 1) % n_samples
         if shuffle and ii == 0:
             random_state.shuffle(index)
         i = index[ii]
-        eta = _get_eta(learning_rate, alpha, eta0, power_t, t)
+        eta = _get_eta(learning_rate, alpha, eta0, power_t, t_eta)
 
         # Retrieve row.
         X.get_row_ptr(i, &indices, &data, &n_nz)
@@ -406,12 +412,17 @@ def _binary_sgd(self,
             if ret is not None:
                 break
 
-    # Finalize.
+    # Finalize: flush all delayed regularization into W so that the weights
+    # can be handed back to the caller (e.g. another partial_fit call)
+    # without losing any buffered penalty state.
     if penalty == 1 or nn_l1:
         _l1_finalize(<double*>delta.data, <LONG*>timestamps.data,
                      W, k, t, nn_l1)
     elif w_scale != 1.0:
         W[k] *= w_scale
+        w_scale = 1.0
+
+    return t_start + t
 
 
 cdef void _softmax(double* scores, int size):
@@ -650,7 +661,9 @@ def _multiclass_sgd(self,
                     random_state,
                     callback,
                     int n_calls,
-                    int verbose):
+                    int verbose,
+                    LONG t_start=0,
+                    np.ndarray[double, ndim=1, mode='c'] w_scales_init=None):
 
     cdef Py_ssize_t n_samples = X.get_n_samples()
     cdef Py_ssize_t n_features = X.get_n_features()
@@ -658,11 +671,14 @@ def _multiclass_sgd(self,
 
     # Initialization
     cdef int it, i, ii, l
-    cdef LONG t
+    cdef LONG t, t_eta
     cdef double pred, eta, scale, norm
     cdef double intercept = 0.0
     cdef np.ndarray[double, ndim=1, mode='c'] w_scales
-    w_scales = np.ones(n_vectors, dtype=np.float64)
+    if w_scales_init is None:
+        w_scales = np.ones(n_vectors, dtype=np.float64)
+    else:
+        w_scales = w_scales_init
     cdef np.ndarray[double, ndim=1, mode='c'] scores
     scores = np.ones(n_vectors, dtype=np.float64)
     cdef int all_zero
@@ -683,13 +699,17 @@ def _multiclass_sgd(self,
     cdef np.ndarray[int, ndim=1, mode='c'] index
     index = np.arange(n_samples, dtype=np.int32)
 
+    # t is local to this call (regularization buffers are flushed at the
+    # end); t_eta is the absolute number of updates performed across all
+    # calls and drives the learning-rate schedule.
     for t in xrange(1, max_iter + 1):
+        t_eta = t_start + t
         # Retrieve current training instance and shuffle if necessary.
-        ii = (t-1) % n_samples
+        ii = (t - 1) % n_samples
         if shuffle and ii == 0:
             random_state.shuffle(index)
         i = index[ii]
-        eta = _get_eta(learning_rate, alpha, eta0, power_t, t)
+        eta = _get_eta(learning_rate, alpha, eta0, power_t, t_eta)
 
         # Retrieve row.
         X.get_row_ptr(i, &indices, &data, &n_nz)
@@ -729,12 +749,17 @@ def _multiclass_sgd(self,
             if ret is not None:
                 break
 
-    # Finalize.
+    # Finalize: flush all delayed regularization into W and reset the
+    # accumulated scales so that a subsequent call starts from an exact,
+    # self-contained weight matrix.
     if penalty == 2:
         for l in xrange(n_vectors):
             if w_scales[l] != 1.0:
                 W[l] *= w_scales[l]
+            w_scales[l] = 1.0
     elif penalty == 12:
         _l1l2_finalize(<double*>delta.data, <LONG*>timestamps.data,
                        W, t)
+
+    return t_start + t
 
